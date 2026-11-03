@@ -68,7 +68,7 @@ jobs:
             echo "No keystore secret available, generating temporary keystore"
             KS_PASS=$(openssl rand -hex 32)
             KEY_PASS=$(openssl rand -hex 32)
-            ALIAS=ci-key
+            ALIAS=pr-key
             keytool -genkeypair -alias "$ALIAS" -keyalg RSA -keysize 2048 -validity 10000 \
               -storepass "$KS_PASS" -keypass "$KEY_PASS" \
               -dname "CN=KernelSU CI" -storetype JKS -keystore sign.jks
