@@ -104,7 +104,10 @@ typedef int (*ksu_proc_open_fn)(struct inode *, struct file *);
 typedef int (*ksu_show_fn)(struct seq_file *, struct vfsmount *);
 
 static DEFINE_MUTEX(ksu_mount_hide_mutex);
-static bool ksu_mount_hide_enabled __read_mostly = true;
+/* Disabled by default on this Samsung build: the hook install patches kernel
+ * structures that Samsung RKP protects, which hard-reset the device during
+ * late-load. Enable it from the manager once the callthru path is verified. */
+static bool ksu_mount_hide_enabled __read_mostly = false;
 static bool ksu_mount_hide_running __read_mostly = false;
 
 /* patched .open slots inside the resolved const file_operations (rodata) */

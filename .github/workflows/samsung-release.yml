@@ -118,7 +118,7 @@ jobs:
           set -eux
           cd kernel
           make -j"$(nproc)" \
-            CONFIG_KSU=m CONFIG_KPM=y CC=clang \
+            CONFIG_KSU=m CC=clang \
             KSU_PACKAGE_NAME="$PACKAGE_NAME" \
             KSU_EXPECTED_SIZE="$EXPECTED_SIZE" \
             KSU_EXPECTED_HASH="$EXPECTED_HASH" \
