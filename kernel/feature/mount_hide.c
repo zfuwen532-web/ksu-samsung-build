@@ -118,6 +118,17 @@ static ksu_proc_open_fn ksu_orig_mounts_open;
 static ksu_proc_open_fn ksu_orig_mountinfo_open;
 static ksu_proc_open_fn ksu_orig_mountstats_open;
 static ksu_show_fn ksu_orig_show_vfsmnt;
+
+/*
+ * On RKP kernels ksu_patch_text() does not write the pointer: it leaves the slot
+ * pointing at the original function and installs a branch at that function's
+ * entry instead. The shim therefore cannot call ksu_orig_*_open -- that would
+ * re-enter the shim and recurse until the kernel stack overflows. The stub that
+ * replays the displaced instructions is the only way back into the original.
+ */
+static ksu_proc_open_fn callthru_mounts_open;
+static ksu_proc_open_fn callthru_mountinfo_open;
+static ksu_proc_open_fn callthru_mountstats_open;
 static ksu_show_fn ksu_orig_show_mountinfo;
 static ksu_show_fn ksu_orig_show_vfsstat;
 
@@ -423,7 +434,11 @@ static int __nocfi ksu_install_filter(struct file *file, ksu_show_fn expected, k
 
 static int __nocfi ksu_mounts_open(struct inode *inode, struct file *file)
 {
-    int ret = ksu_orig_mounts_open(inode, file);
+    int ret;
+
+    if (!callthru_mounts_open)
+        return -ENOSYS;
+    ret = callthru_mounts_open(inode, file);
     if (!ret && ksu_should_hide_mount_for_current())
         ksu_install_filter(file, ksu_orig_show_vfsmnt, ksu_show_vfsmnt);
     return ret;
@@ -431,7 +446,11 @@ static int __nocfi ksu_mounts_open(struct inode *inode, struct file *file)
 
 static int __nocfi ksu_mountinfo_open(struct inode *inode, struct file *file)
 {
-    int ret = ksu_orig_mountinfo_open(inode, file);
+    int ret;
+
+    if (!callthru_mountinfo_open)
+        return -ENOSYS;
+    ret = callthru_mountinfo_open(inode, file);
     if (!ret && ksu_should_hide_mount_for_current())
         ksu_install_filter(file, ksu_orig_show_mountinfo, ksu_show_mountinfo);
     return ret;
@@ -439,15 +458,19 @@ static int __nocfi ksu_mountinfo_open(struct inode *inode, struct file *file)
 
 static int __nocfi ksu_mountstats_open(struct inode *inode, struct file *file)
 {
-    int ret = ksu_orig_mountstats_open(inode, file);
+    int ret;
+
+    if (!callthru_mountstats_open)
+        return -ENOSYS;
+    ret = callthru_mountstats_open(inode, file);
     if (!ret && ksu_should_hide_mount_for_current())
         ksu_install_filter(file, ksu_orig_show_vfsstat, ksu_show_vfsstat);
     return ret;
 }
 
-/* patch one file_operations::open; record slot + original for teardown */
+/* patch one file_operations::open; record slot + original + call path for teardown */
 static int ksu_patch_open(struct file_operations *ops, ksu_proc_open_fn newfn, ksu_proc_open_fn **slot_out,
-                          ksu_proc_open_fn *orig_out, const char *name)
+                          ksu_proc_open_fn *orig_out, ksu_proc_open_fn *callthru_out, const char *name)
 {
     ksu_proc_open_fn *slot = &ops->open;
     ksu_proc_open_fn nf = newfn;
@@ -461,6 +484,22 @@ static int ksu_patch_open(struct file_operations *ops, ksu_proc_open_fn newfn, k
         *orig_out = NULL;
         return ret;
     }
+
+    if (static_branch_unlikely(&ksu_rkp_key)) {
+        void *stub = ksu_rkp_get_stub((void *)*orig_out);
+
+        if (!stub) {
+            pr_err("mount_hide: no RKP stub for %s.open, rolling back\n", name);
+            ksu_patch_text(slot, orig_out, sizeof(*orig_out), KSU_PATCH_TEXT_FLUSH_DCACHE);
+            *orig_out = NULL;
+            return -ENOSYS;
+        }
+        *callthru_out = (ksu_proc_open_fn)stub;
+        pr_info("mount_hide: %s.open calls through stub %pS\n", name, stub);
+    } else {
+        *callthru_out = *orig_out;
+    }
+
     *slot_out = slot;
     return 0;
 }
@@ -492,6 +531,9 @@ static void ksu_mount_hide_unhook(void)
     ksu_unhook_one(&ksu_mountstats_open_slot, &ksu_orig_mountstats_open, "proc_mountstats_operations");
     /* drain shims that already entered .open before the restore above */
     synchronize_rcu();
+    callthru_mounts_open = NULL;
+    callthru_mountinfo_open = NULL;
+    callthru_mountstats_open = NULL;
 }
 
 /*
@@ -556,15 +598,15 @@ static int ksu_mount_hide_enable(void)
     }
 
     ret = ksu_patch_open(ops_mounts, ksu_mounts_open, &ksu_mounts_open_slot, &ksu_orig_mounts_open,
-                         "proc_mounts_operations");
+                         &callthru_mounts_open, "proc_mounts_operations");
     if (ret)
         goto fail;
     ret = ksu_patch_open(ops_mountinfo, ksu_mountinfo_open, &ksu_mountinfo_open_slot, &ksu_orig_mountinfo_open,
-                         "proc_mountinfo_operations");
+                         &callthru_mountinfo_open, "proc_mountinfo_operations");
     if (ret)
         goto fail;
     ret = ksu_patch_open(ops_mountstats, ksu_mountstats_open, &ksu_mountstats_open_slot, &ksu_orig_mountstats_open,
-                         "proc_mountstats_operations");
+                         &callthru_mountstats_open, "proc_mountstats_operations");
     if (ret)
         goto fail;
 
@@ -595,10 +637,6 @@ static int mount_hide_feature_set(u64 value)
     int ret = 0;
 
     pr_info("mount_hide: set to %d\n", enable);
-    if (enable && static_branch_unlikely(&ksu_rkp_key)) {
-        pr_warn("mount_hide: refused, RKP branch patching cannot host the shim\n");
-        return -EOPNOTSUPP;
-    }
     mutex_lock(&ksu_mount_hide_mutex);
     ksu_mount_hide_enabled = enable;
     if (enable) {
@@ -630,20 +668,6 @@ void __init ksu_mount_hide_init(void)
 {
     if (ksu_register_feature_handler(&mount_hide_handler))
         pr_err("Failed to register mount_hide feature handler\n");
-
-    /*
-     * Samsung RKP kernels cannot host this shim: ksu_patch_text() does not
-     * write the .open pointer there, it installs a branch at the entry of the
-     * function the slot points to. The shim then calls the "saved original",
-     * which is that very function -- now a branch back into the shim -- and the
-     * kernel recurses until the stack overflows (panic at late-load).
-     * Refuse the feature instead of crashing the device.
-     */
-    if (static_branch_unlikely(&ksu_rkp_key)) {
-        pr_warn("mount_hide: unavailable on RKP kernels (branch patching), disabled\n");
-        ksu_mount_hide_enabled = false;
-        return;
-    }
 
     /* default enabled: install the hooks up front */
     mutex_lock(&ksu_mount_hide_mutex);
