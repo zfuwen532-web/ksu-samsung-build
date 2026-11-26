@@ -181,13 +181,25 @@ jobs:
           cp lkm-out/*.ko "userspace/ksud/bin/$ARCH/"
           ls -la "userspace/ksud/bin/$ARCH/"
 
+      - name: Setup Android NDK
+        run: |
+          set -eux
+          NDK_DIR=$(ls -d "$ANDROID_HOME"/ndk/* 2>/dev/null | head -n 1 || true)
+          if [ -z "$NDK_DIR" ]; then
+            yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+            "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;27.2.12479018"
+            NDK_DIR=$(ls -d "$ANDROID_HOME"/ndk/* | head -n 1)
+          fi
+          test -x "$NDK_DIR/toolchains/llvm/prebuilt/linux-x86_64/bin/clang"
+          echo "ANDROID_NDK_HOME=$NDK_DIR" >> "$GITHUB_ENV"
+          echo "using NDK: $NDK_DIR"
+
       - name: Setup Rust
         env:
           TARGET: ${{ matrix.target }}
         run: |
           set -eux
           rustup target add "$TARGET"
-          cargo install cargo-ndk --locked || true
 
       - name: Build ksud
         env:
