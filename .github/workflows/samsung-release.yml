@@ -270,10 +270,9 @@ jobs:
           SM=$(ls -d "$SDK"/cmdline-tools/*/bin/sdkmanager | head -n 1)
           test -x "$SM"
           yes | "$SM" --licenses > /dev/null || true
-          "$SM" "platform-tools" || true
-          "$SM" "platforms;android-37" "build-tools;36.0.0" "ndk;29.0.14206865" || \
-            { "$SM" --channel=3 "platforms;android-37" "build-tools;36.0.0" "ndk;29.0.14206865" || true; }
-          "$SM" "ndk;29.0.14206865" || true
+          for pkg in "platform-tools" "platforms;android-36" "build-tools;36.0.0" "ndk;29.0.14206865"; do
+            "$SM" "$pkg" || echo "WARN: could not install $pkg"
+          done
           NDK="$SDK/ndk/29.0.14206865"
           test -d "$NDK" || NDK=$(ls -d "$SDK"/ndk/* | head -n 1)
           echo "ANDROID_NDK_HOME=$NDK" >> "$GITHUB_ENV"
