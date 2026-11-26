@@ -337,8 +337,14 @@ pub fn save_config() -> Result<()> {
     // Keep persisted values of forced features, they are in effect again once
     // the boot config no longer forces them.
     let mut features = load_binary_config().unwrap_or_default();
+    // A late-load session arms SelinuxHide for this boot only; a global save
+    // must not overwrite the ordinary boot preference.
+    let late_load_session = crate::ksucalls::is_late_load();
 
     for feature_id in &FeatureId::ALL {
+        if late_load_session && *feature_id == FeatureId::SelinuxHide {
+            continue;
+        }
         let id = *feature_id as u32;
         if let Ok(state) = crate::ksucalls::get_feature(id)
             && state.supported
