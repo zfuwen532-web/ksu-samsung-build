@@ -22,6 +22,7 @@
 #include "feature/mount_hide.h"
 #include "feature/kernel_umount.h"
 #include "infra/symbol_resolver.h"
+#include "compat/jailbreak.h"
 #include "hook/patch_memory.h"
 #include "policy/allowlist.h"
 #include "policy/feature.h"
@@ -104,10 +105,7 @@ typedef int (*ksu_proc_open_fn)(struct inode *, struct file *);
 typedef int (*ksu_show_fn)(struct seq_file *, struct vfsmount *);
 
 static DEFINE_MUTEX(ksu_mount_hide_mutex);
-/* Disabled by default on this Samsung build: the hook install patches kernel
- * structures that Samsung RKP protects, which hard-reset the device during
- * late-load. Enable it from the manager once the callthru path is verified. */
-static bool ksu_mount_hide_enabled __read_mostly = false;
+static bool ksu_mount_hide_enabled __read_mostly = true;
 static bool ksu_mount_hide_running __read_mostly = false;
 
 /* patched .open slots inside the resolved const file_operations (rodata) */
@@ -597,6 +595,10 @@ static int mount_hide_feature_set(u64 value)
     int ret = 0;
 
     pr_info("mount_hide: set to %d\n", enable);
+    if (enable && static_branch_unlikely(&ksu_rkp_key)) {
+        pr_warn("mount_hide: refused, RKP branch patching cannot host the shim\n");
+        return -EOPNOTSUPP;
+    }
     mutex_lock(&ksu_mount_hide_mutex);
     ksu_mount_hide_enabled = enable;
     if (enable) {
@@ -628,6 +630,20 @@ void __init ksu_mount_hide_init(void)
 {
     if (ksu_register_feature_handler(&mount_hide_handler))
         pr_err("Failed to register mount_hide feature handler\n");
+
+    /*
+     * Samsung RKP kernels cannot host this shim: ksu_patch_text() does not
+     * write the .open pointer there, it installs a branch at the entry of the
+     * function the slot points to. The shim then calls the "saved original",
+     * which is that very function -- now a branch back into the shim -- and the
+     * kernel recurses until the stack overflows (panic at late-load).
+     * Refuse the feature instead of crashing the device.
+     */
+    if (static_branch_unlikely(&ksu_rkp_key)) {
+        pr_warn("mount_hide: unavailable on RKP kernels (branch patching), disabled\n");
+        ksu_mount_hide_enabled = false;
+        return;
+    }
 
     /* default enabled: install the hooks up front */
     mutex_lock(&ksu_mount_hide_mutex);
