@@ -270,7 +270,7 @@ jobs:
           SM=$(ls -d "$SDK"/cmdline-tools/*/bin/sdkmanager | head -n 1)
           test -x "$SM"
           yes | "$SM" --licenses > /dev/null || true
-          for pkg in "platform-tools" "platforms;android-36" "build-tools;36.0.0" "ndk;29.0.14206865"; do
+          for pkg in "platform-tools" "platforms;android-37.0" "build-tools;37.0.0" "ndk;29.0.14206865"; do
             "$SM" "$pkg" || echo "WARN: could not install $pkg"
           done
           NDK="$SDK/ndk/29.0.14206865"

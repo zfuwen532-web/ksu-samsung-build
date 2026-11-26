@@ -6,8 +6,8 @@ plugins {
 }
 
 extra["androidMinSdkVersion"] = 24
-extra["androidTargetSdkVersion"] = 36
-extra["androidCompileSdkVersion"] = 36
+extra["androidTargetSdkVersion"] = 37
+extra["androidCompileSdkVersion"] = 37
 extra["androidCompileSdkVersionMinor"] = 0
 extra["androidBuildToolsVersion"] = "37.0.0"
 extra["androidCompileNdkVersion"] = libs.versions.ndk.get()
