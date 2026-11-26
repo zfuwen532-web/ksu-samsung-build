@@ -33,6 +33,24 @@ jobs:
         with:
           fetch-depth: 0
 
+      # The DDK image ships git with core.symlinks=false, so the uapi symlinks
+      # land as plain files and the kernel headers are missing. Recreate them.
+      - name: Repair uapi symlinks
+        run: |
+          set -eux
+          for link in kernel/include/uapi manager/app/src/main/cpp/uapi; do
+            if [ -d "$link" ] && [ -e "$link/app_profile.h" ]; then
+              continue
+            fi
+            case "$link" in
+              kernel/include/uapi) target=../../uapi ;;
+              *) target=../../../../../uapi ;;
+            esac
+            rm -rf "$link"
+            ln -s "$target" "$link"
+          done
+          ls -la kernel/include/uapi/app_profile.h uapi/app_profile.h
+
       - name: Version code
         id: version
         run: |
@@ -73,6 +91,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The DDK image ships git with core.symlinks=false, so the uapi symlinks
+      # land as plain files and the kernel headers are missing. Recreate them.
+      - name: Repair uapi symlinks
+        run: |
+          set -eux
+          for link in kernel/include/uapi manager/app/src/main/cpp/uapi; do
+            if [ -d "$link" ] && [ -e "$link/app_profile.h" ]; then
+              continue
+            fi
+            case "$link" in
+              kernel/include/uapi) target=../../uapi ;;
+              *) target=../../../../../uapi ;;
+            esac
+            rm -rf "$link"
+            ln -s "$target" "$link"
+          done
+          ls -la kernel/include/uapi/app_profile.h uapi/app_profile.h
+
       - name: Build kernelsu.ko
         env:
           EXPECTED_SIZE: ${{ needs.key.outputs.expected_size }}
@@ -108,6 +144,24 @@ jobs:
         target: [aarch64-linux-android, armv7-linux-androideabi, x86_64-linux-android]
     steps:
       - uses: actions/checkout@v4
+
+      # The DDK image ships git with core.symlinks=false, so the uapi symlinks
+      # land as plain files and the kernel headers are missing. Recreate them.
+      - name: Repair uapi symlinks
+        run: |
+          set -eux
+          for link in kernel/include/uapi manager/app/src/main/cpp/uapi; do
+            if [ -d "$link" ] && [ -e "$link/app_profile.h" ]; then
+              continue
+            fi
+            case "$link" in
+              kernel/include/uapi) target=../../uapi ;;
+              *) target=../../../../../uapi ;;
+            esac
+            rm -rf "$link"
+            ln -s "$target" "$link"
+          done
+          ls -la kernel/include/uapi/app_profile.h uapi/app_profile.h
 
       - uses: actions/download-artifact@v4
         with:
