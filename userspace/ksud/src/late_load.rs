@@ -35,6 +35,23 @@ fn dump_process_info(label: &str) {
     );
 }
 
+/// In late-load mode the manager is installed over a running system, so the
+/// policy backup has to be claimed before `boot-completed` releases it.
+/// Default is on; set KSU_LATE_LOAD_SELINUX_HIDE=0 to skip.
+fn prepare_late_load_selinux_hide() {
+    if !crate::ksucalls::is_late_load() {
+        return;
+    }
+    let requested = std::env::var("KSU_LATE_LOAD_SELINUX_HIDE").as_deref() != Ok("0");
+    let id = crate::feature_id::FeatureId::SelinuxHide as u32;
+    match crate::ksucalls::set_feature(id, u64::from(requested)) {
+        Ok(()) => log::info!("late-load selinux hide: requested={requested} applied=true"),
+        Err(error) => {
+            log::warn!("late-load selinux hide: requested={requested} applied=false: {error:#}")
+        }
+    }
+}
+
 pub fn run(
     package_name: &str,
     kmi: Option<String>,
@@ -141,6 +158,10 @@ pub fn run(
     if let Err(e) = crate::feature::init_features() {
         warn!("init features failed: {e}");
     }
+
+    // Arm SELinux hiding for this late-load session before the boot-completed
+    // stage can release the policy backup.
+    prepare_late_load_selinux_hide();
 
     // 7b. Initialize extensions (forced / module-managed are skipped).
     crate::extension::init_forced_extensions();
