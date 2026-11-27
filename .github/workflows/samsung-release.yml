@@ -56,7 +56,7 @@ jobs:
         run: |
           set -eux
           COMMIT_COUNT=$(git rev-list --count HEAD)
-          echo "code=$((30000 + COMMIT_COUNT + 996))" >> "$GITHUB_OUTPUT"
+          echo "code=$((35000 + COMMIT_COUNT))" >> "$GITHUB_OUTPUT"
 
       - name: Generate keystore and export certificate
         id: export
