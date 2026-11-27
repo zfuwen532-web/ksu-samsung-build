@@ -55,8 +55,10 @@ jobs:
         id: version
         run: |
           set -eux
-          COMMIT_COUNT=$(git rev-list --count HEAD)
-          echo "code=$((35000 + COMMIT_COUNT))" >> "$GITHUB_OUTPUT"
+          # Pin to the upstream CI build this tree is ported onto
+          # (shirkneko/SukiSU "Manager CI (35102)"): a shallow checkout here has a
+          # truncated history, so the commit count is not a usable version.
+          echo "code=35102" >> "$GITHUB_OUTPUT"
 
       - name: Generate keystore and export certificate
         id: export
